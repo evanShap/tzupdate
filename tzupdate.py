@@ -13,6 +13,7 @@ import requests
 import errno
 import logging
 import collections
+import subprocess
 
 from multiprocessing import Queue, Process
 
@@ -35,7 +36,7 @@ GeoIPService = collections.namedtuple(
     'GeoIPService', ['url', 'tz_keys', 'error_key'],
 )
 
-SERVICES = set([
+SERVICES = {
     GeoIPService(
         'http://ip-api.com/json/{ip}', ('timezone',), 'message',
     ),
@@ -44,8 +45,8 @@ SERVICES = set([
     ),
     GeoIPService(
         'http://geoip.nekudo.com/api/{ip}', ('location', 'time_zone'), 'msg',
-    ),
-])
+    )
+}
 
 
 def get_timezone_for_ip(ip, service, queue_obj):
@@ -148,6 +149,11 @@ def parse_args(argv):
         help="print the timezone, but don't update the localtime file"
     )
     parser.add_argument(
+        '-c', '--timedatectl',
+        action='store_true',
+        help="use timedatectl to change the timezone"
+    )
+    parser.add_argument(
         '-a', '--ip',
         help='use this IP instead of automatically detecting it'
     )
@@ -221,6 +227,13 @@ def main(argv=None, services=SERVICES):
 
     if args.print_only:
         print('Detected timezone is %s.' % timezone)
+    elif args.timedatectl:
+        result = subprocess.check_call(['/usr/bin/timedatectl', 'set-timezone', str(timezone)], timeout=10)
+        if(result):
+            raise TimezoneUpdateException(
+                'Unable to set timezone', timezone, 'result', result
+            )
+        print('Set system timezone to %s.' % timezone, "using timedatectl")
     else:
         link_localtime(timezone, args.zoneinfo_path, args.localtime_path)
         write_debian_timezone(timezone, args.debian_timezone_path)
